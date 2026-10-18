@@ -1,0 +1,277 @@
+---
+title: "Digital Public Services and New Business Creation in Europe, 2010-2024"
+author: "Khrystyna Vdovychenko"
+date: "October 2026"
+geometry: margin=2cm
+output:
+  pdf_document: default
+  html_document: default
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{!htbp}
+  - \floatplacement{table}{!htbp}
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(fixest)
+```
+
+## 1. Introduction
+
+Governments across Europe have moved many public services online, including the registration of new companies. A common expectation is that simpler and faster digital procedures make it easier to start a business. Ukraine is a recent example: since August 2022 a limited liability company can be registered automatically through the Diia portal.
+
+This report asks whether the level of digital public services is associated with new business creation in European countries between 2010 and 2024. It combines the UN Online Service Index with World Bank data on new business density for 39 countries and estimates panel regressions with country and year fixed effects. A separate descriptive section uses Ukrainian register data to extend the series for Ukraine to 2025.
+
+The main finding is that countries with better online services have more new businesses, but this association disappears once internet use, income and stable differences between countries are taken into account. Within countries over time, improvements in online services are not linked to more new company registrations.
+
+The report is structured as follows. Section 2 reviews related research. Section 3 describes the data and Section 4 the method. Section 5 presents the results and Section 6 the robustness checks. Section 7 discusses Ukraine, Section 8 the limitations, and Section 9 concludes.
+
+## 2. Related literature
+
+A large literature studies how the cost of starting a business affects firm entry. Djankov et al. (2002) collected data on the procedures, time and cost required to register a start-up in 85 countries. They found that official entry costs are very high in most countries and that heavier entry regulation is associated with more corruption and larger unofficial economies, but not with better public or private goods. Their work shows that registration rules differ widely between countries, which is one reason to compare countries with themselves over time rather than with each other.
+
+Studies of specific reforms give more direct evidence. Bruhn (2011) uses the staggered introduction of a simplified registration system across Mexican municipalities and finds that it increased the number of registered businesses by about 5 percent. Branstetter et al. (2014) study the "On the Spot Firm" programme in Portugal, which allowed firms to register at a one-stop shop from 2005. Firm formation rose by about 17 percent in the short run, but mostly among small firms in low-technology sectors that were less likely to survive. Both studies rely on detailed sub-national data and on reforms introduced at different times in different places.
+
+Measures of digital government are newer. The UN E-Government Survey has assessed national online services in all UN member states since 2001, but it compares countries with one another rather than measuring an absolute level, and its methodology is updated in each edition (United Nations, 2024). The OECD Digital Government Index measures the maturity of digital government policies, but its latest edition covers 38 countries for a single year (OECD, 2025). This report uses the UN index because it covers all 39 countries in the sample over eight survey waves. Compared with the reform studies above, it asks a broader and less precise question: whether better national online services go together with more new companies across Europe.
+
+## 3. Data
+
+```{r data-load}
+panel <- read_csv("data_clean/panel_final.csv")
+n_countries <- n_distinct(panel$iso3c)
+n_obs <- nrow(panel)
+n_missing <- sum(is.na(panel$new_biz))
+```
+
+The analysis combines two public sources. Digital public services are measured with the Online Service Index (OSI) from the UN E-Government Survey. The survey is published every two years, so the panel covers eight waves from 2010 to 2024. The OSI ranges from 0 to 1 and reflects the scope and quality of national online government services. It is normalised within each survey wave, so it shows a country's position relative to other countries rather than an absolute level.
+
+New business creation is measured with new business density from the World Bank World Development Indicators: the number of newly registered limited liability companies per 1,000 people aged 15-64. Control variables from the same source are GDP per capita (PPP, constant 2021 international dollars) and the share of the population using the internet.
+
+The sample covers `r n_countries` European countries: the EU-27, Norway, Iceland, Switzerland, the United Kingdom, Ukraine, Moldova, Turkey and five Western Balkan countries. Russia and Belarus are excluded, as are microstates without World Bank data. The final panel has `r n_obs` country-year observations. New business density is missing for `r n_missing` of them, mainly for the Netherlands (2010-2014 and 2024) and Ukraine (2018-2024).
+
+## 4. Method
+
+I estimate three linear models with the log of new business density as the dependent variable. Using the log reduces the influence of a few countries with very high values, and the coefficients can be read as approximate percentage differences.
+
+Model 1 regresses log new business density on the OSI only. Model 2 adds two controls: log GDP per capita and internet use. Model 3 is the main specification. It adds country and year fixed effects:
+
+$$\log(\text{NewBiz}_{it}) = \beta \, \text{OSI}_{it} + \gamma_1 \log(\text{GDPpc}_{it}) + \gamma_2 \, \text{Internet}_{it} + \alpha_i + \lambda_t + \varepsilon_{it}$$
+
+Here $i$ is a country and $t$ a survey year. Country fixed effects ($\alpha_i$) absorb stable differences between countries, such as legal systems or business culture. Year fixed effects ($\lambda_t$) absorb shocks common to all countries in a given year, such as the COVID-19 pandemic or Europe-wide changes in financing conditions. As a result, $\beta$ is estimated only from changes within countries over time, relative to other countries in the same year.
+
+Standard errors are clustered by country, because observations of the same country in different years are not independent. Thirty-nine clusters is an acceptable but small number, so p-values should be read with some caution.
+
+These models describe associations, not causal effects. The OSI may move together with other unobserved changes inside a country, and higher business activity could itself push governments to expand online services.
+ 
+## 5. Results
+
+```{r models}
+library(modelsummary)
+
+panel <- panel |>
+  mutate(log_new_biz = log(new_biz),
+         log_gdp_pc  = log(gdp_pc))
+
+m1 <- feols(log_new_biz ~ osi, data = panel, cluster = ~iso3c)
+m2 <- feols(log_new_biz ~ osi + log_gdp_pc + internet,
+            data = panel, cluster = ~iso3c)
+m3 <- feols(log_new_biz ~ osi + log_gdp_pc + internet | iso3c + year,
+            data = panel, cluster = ~iso3c)
+```
+
+```{r table-main}
+modelsummary(
+  list("(1) Pooled" = m1,
+       "(2) Controls" = m2,
+       "(3) Country and year FE" = m3),
+  stars = TRUE,
+  coef_rename = c(osi = "Online Service Index",
+                  log_gdp_pc = "log GDP per capita",
+                  internet = "Internet users (%)"),
+  gof_map = c("nobs", "r.squared", "r2.within"),
+  title = "Online services and log new business density"
+)
+```
+
+```{r results-numbers}
+pct <- function(b) round((exp(0.1 * b) - 1) * 100, 1)
+b1  <- unname(coef(m1)["osi"])
+b3  <- unname(coef(m3)["osi"])
+ci3 <- unname(unlist(confint(m3)["osi", ]))
+wr2 <- fitstat(m3, "wr2")[[1]]
+```
+
+Table 1 reports the three models. In the pooled model (1), countries with a higher OSI have more new businesses. A 0.1 higher OSI is associated with about `r pct(b1)` percent higher new business density. Once log GDP per capita and internet use are added (2), the OSI coefficient turns negative and is no longer statistically significant. Internet use is the only significant variable in this model.
+
+In the main specification with country and year fixed effects (3), none of the variables is statistically significant, including internet use. The OSI coefficient is `r round(b3, 2)`, with a 95 percent confidence interval from `r round(ci3[1], 2)` to `r round(ci3[2], 2)`. For a 0.1 increase in the OSI, this range runs from about `r pct(ci3[1])` to `r pct(ci3[2])` percent. The data are consistent with no association, and they make a large positive association within countries unlikely. The within R-squared is `r round(wr2, 3)`, so the three variables explain only a small share of the changes in new business density inside countries over time.
+
+```{r fig-between, fig.cap = "Average OSI and new business density by country, 2010-2024", fig.width = 7, fig.height = 4, out.width = "75%", fig.align = "center"}
+library(ggrepel)
+
+country_means <- panel |>
+  filter(!is.na(new_biz)) |>
+  group_by(iso3c) |>
+  summarise(osi = mean(osi),
+            new_biz = mean(new_biz, na.rm = TRUE))
+
+ggplot(country_means, aes(x = osi, y = new_biz, label = iso3c)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, colour = "grey50") +
+  geom_text_repel(size = 3) +
+  scale_y_log10() +
+  labs(x = "Average Online Service Index",
+       y = "New businesses per 1,000 (log scale)") +
+  theme_minimal()
+
+```
+
+Figure 1 shows the cross-country pattern behind Model 1. Countries with a higher average OSI tend to have more new businesses, but the spread is large. Germany and Austria have high OSI values and some of the lowest business densities, while Montenegro and Bulgaria combine relatively low OSI values with high densities. Such stable differences between countries, for example in company law or registration costs, are absorbed by the country fixed effects in Model 3.
+
+```{r fig-within, fig.cap = "OSI and new business density within countries, after removing country effects, year effects and controls", fig.width = 7, fig.height = 3.5, out.width = "70%", fig.align = "center"}
+panel_w <- panel |> filter(!is.na(log_new_biz))
+
+panel_w$y_res <- resid(feols(log_new_biz ~ log_gdp_pc + internet | iso3c + year,
+                             data = panel_w))
+panel_w$x_res <- resid(feols(osi ~ log_gdp_pc + internet | iso3c + year,
+                             data = panel_w))
+
+ggplot(panel_w, aes(x = x_res, y = y_res)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, colour = "grey30") +
+  labs(x = "OSI (residual)",
+       y = "log new business density (residual)") +
+  theme_minimal()
+```
+
+Figure 2 shows the variation that Model 3 uses. Both variables are shown after removing country effects, year effects and the two control variables. The slope of the line equals the OSI coefficient in Model 3 (`r round(coef(lm(y_res ~ x_res, data = panel_w))[2], 2)`). Once stable differences between countries and common shocks in each year are removed, there is no positive relation between changes in the OSI and changes in new business density.
+
+
+## 6. Robustness checks
+
+```{r robustness}
+panel <- panel |>
+  arrange(iso3c, year) |>
+  group_by(iso3c) |>
+  mutate(osi_lag = dplyr::lag(osi)) |>
+  ungroup()
+
+r5 <- feols(log_new_biz ~ osi_lag + log_gdp_pc + internet | iso3c + year,
+            data = panel, cluster = ~iso3c)
+r1 <- feols(log_new_biz ~ egdi + log_gdp_pc + internet | iso3c + year,
+            data = panel, cluster = ~iso3c)
+r2 <- feols(log_new_biz ~ osi + log_gdp_pc + internet | iso3c + year,
+            data = filter(panel, iso3c != "NLD"), cluster = ~iso3c)
+r3 <- feols(log_new_biz ~ osi + log_gdp_pc + internet | iso3c + year,
+            data = filter(panel, !year %in% c(2020, 2022)), cluster = ~iso3c)
+r4 <- feols(log_new_biz ~ osi + log_gdp_pc + internet | iso3c + year,
+            data = filter(panel, !iso3c %in% c("LUX", "EST")), cluster = ~iso3c)
+
+modelsummary(
+  list("Main" = m3,
+       "EGDI" = r1,
+       "No NLD" = r2,
+       "No 2020, 2022" = r3,
+       "No LUX, EST" = r4,
+       "Lagged OSI" = r5),
+  stars = TRUE,
+  coef_rename = c(osi = "Online Service Index",
+                  egdi = "E-Government Development Index",
+                  osi_lag = "Online Service Index (previous wave)",
+                  log_gdp_pc = "log GDP per capita",
+                  internet = "Internet users (%)"),
+  gof_map = c("nobs", "r.squared", "r2.within"),
+  title = "Robustness checks (all models include country and year fixed effects)"
+)
+```
+
+Table 2 repeats the main specification with one change at a time. Replacing the OSI with the broader E-Government Development Index gives a similar negative and insignificant coefficient. Dropping the Netherlands, which has the most missing values, does not change the estimate. Excluding the 2020 and 2022 waves, which were affected by the pandemic, moves the OSI coefficient closer to zero, but it remains insignificant. Dropping Luxembourg and Estonia, the two countries with the highest new business density, also leaves the result unchanged.
+
+Using the OSI from the previous survey wave, two years earlier, gives a coefficient of `r round(coef(r5)["osi_lag"], 2)`, which is also insignificant. There is therefore no sign of a delayed positive association.
+
+Internet use becomes significant in two specifications: at the 10 percent level without Luxembourg and Estonia, and at the 5 percent level with the lagged OSI. It is not significant in the main model or in the other checks, so this result is not robust and should not be over-interpreted.
+
+## 7. Ukraine: a descriptive case study
+
+```{r ukraine-data}
+ukr <- read_csv("data_clean/ukraine_new_llc.csv", show_col_types = FALSE)
+
+val <- ukr |>
+  filter(!is.na(new_biz_wdi)) |>
+  mutate(diff_pct = abs(new_llc_density / new_biz_wdi - 1) * 100)
+
+diff_early <- round(max(val$diff_pct[val$year <= 2013]), 1)
+diff_late  <- round(max(val$diff_pct[val$year >= 2014]), 1)
+
+llc_k <- function(y) round(ukr$new_llc[ukr$year == y] / 1000, 1)
+```
+
+The regression panel has no World Bank data on new business density for Ukraine after 2017. To extend the series, I counted new limited liability companies (LLCs) by registration year in the Unified State Register published by the Ministry of Justice of Ukraine on data.gov.ua (downloaded on 12 October 2026). The register covers entities registered since July 2004 and includes companies that were later closed, so the series starts in 2005. I kept only LLCs, the legal form counted in the World Bank indicator, and divided the counts by the population aged 15-64 from the World Bank.
+
+For 2014-2017 the resulting density differs from the World Bank figure by at most `r diff_late` percent, and for 2010-2013 by at most `r diff_early` percent (Figure 3). The register data can therefore be used to extend the official series to 2025.
+
+```{r fig-ukraine, fig.cap = "New limited liability companies in Ukraine, 2005-2025", fig.width = 8, fig.height = 4, out.width = "80%", fig.align = "center"}
+milestones <- tibble(
+  date = c(2020.75, 2022.15, 2022.65),
+  num  = c("1", "2", "3")
+)
+
+ggplot(ukr, aes(x = year + 0.5)) +
+  geom_vline(data = milestones, aes(xintercept = date),
+             linetype = "dashed", colour = "grey60") +
+  geom_text(data = milestones, aes(x = date, y = 2.1, label = num),
+            size = 3.5, colour = "grey30") +
+  geom_line(aes(y = new_llc_density,
+                colour = "Unified State Register (own calculation)")) +
+  geom_point(aes(y = new_biz_wdi, colour = "World Bank WDI")) +
+  labs(x = NULL,
+       y = "New LLCs per 1,000 people aged 15-64",
+       colour = NULL,
+       caption = paste("1 = LLC registration on Diia portal (Oct 2020)",
+                       "2 = full-scale invasion (Feb 2022)",
+                       "3 = automatic LLC registration on Diia (Aug 2022)",
+                       sep = "\n")) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.caption = element_text(hjust = 0))
+```
+
+New LLC registrations peaked in 2018 at `r llc_k(2018)` thousand and fell to `r llc_k(2022)` thousand in 2022, the year of the full-scale invasion. By 2025 they had partly recovered to `r llc_k(2025)` thousand. Registration of LLCs through the Diia portal started in October 2020, and automatic registration followed in August 2022. Because the second change happened in the same year as the invasion, these annual data cannot separate the role of digital services from the effect of the war. This section is therefore descriptive only. Population estimates for Ukraine after 2022 are also uncertain, so the per capita values for 2022-2025 should be read with care.
+
+## 8. Limitations
+
+- **Association, not causation.** The fixed effects models remove stable country differences and common shocks in each year, but not other changes inside a country that move together with the OSI. Higher business activity could also lead governments to expand online services.
+- **Little variation within countries.** Many countries already have OSI values close to 1, and the panel has only eight survey waves. Within countries the OSI mostly moves by less than 0.2 after removing country and year effects (Figure 2), which limits what Model 3 can detect.
+- **Measurement of digital services.** The OSI is normalised within each survey wave and the UN methodology changes over time, so it measures a country's relative position rather than an absolute level of online services.
+- **Measurement of new businesses.** New business density counts only newly registered limited liability companies. It excludes sole proprietors and depends on national company law and registration costs. Data are missing for some country-years, most of all for the Netherlands (four waves) and Ukraine (2018-2024).
+- **Inference.** Standard errors are clustered by country with only 39 clusters, and several robustness checks were run. Single significant results in individual checks should therefore be read with caution.
+- **Omitted financing conditions.** A control for bank lending rates was not possible because the World Bank series is missing for most euro area countries.
+- **Ukraine case study.** The register data are a snapshot downloaded on 12 October 2026 and about 0.2 percent of legal entities have no valid registration date. Changes in digital registration happened at the same time as the full-scale invasion, and population estimates after 2022 are uncertain.
+
+## 9. Conclusion
+
+This report asked whether the level of digital public services is associated with new business creation in 39 European countries between 2010 and 2024. Across countries, a better Online Service Index goes together with more new limited liability companies: a 0.1 higher OSI is associated with about `r pct(b1)` percent higher new business density. This association disappears once internet use, income, and country and year fixed effects are taken into account. Within the same country over time, improvements in online services are not linked to more new businesses. The confidence interval is not consistent with a positive association larger than about `r pct(ci3[2])` percent per 0.1 increase in the OSI, and the result holds across all robustness checks.
+
+For Ukraine, register data validated against the World Bank series show a peak in new LLC registrations in 2018, a sharp fall in 2022 and a partial recovery by 2025. The introduction of online and automatic LLC registration cannot be separated from the effect of the war in these data.
+
+One possible interpretation is that differences in new business creation between European countries reflect stable features, such as company law and registration costs, more than the quality of online services.
+
+For policy, this does not mean that online registration has no value. Digital services can lower the time and cost of starting a business for each entrepreneur. The results suggest only that higher national online service scores are not, on their own, a reliable way to raise the overall rate of new company registrations. Firm-level or monthly registration data around specific reforms would give clearer guidance.
+
+## References
+
+Branstetter, L., Lima, F., Taylor, L. J. and Venâncio, A. (2014). Do entry regulations deter entrepreneurship and job creation? Evidence from recent reforms in Portugal. *The Economic Journal*, 124(577), 805-832.
+
+Bruhn, M. (2011). License to sell: The effect of business registration reform on entrepreneurial activity in Mexico. *The Review of Economics and Statistics*, 93(1), 382-386.
+
+Djankov, S., La Porta, R., Lopez-de-Silanes, F. and Shleifer, A. (2002). The regulation of entry. *The Quarterly Journal of Economics*, 117(1), 1-37.
+
+Ministry of Justice of Ukraine (2026). Unified State Register of Legal Entities, Individual Entrepreneurs and Public Organisations [open data, version of 6 October 2026]. https://data.gov.ua/dataset/a1799820-195b-4982-8141-6e84f58103e7
+
+OECD (2025). *Government at a Glance 2025*. OECD Publishing, Paris. https://doi.org/10.1787/0efd0bcd-en
+
+United Nations (2024). *E-Government Survey 2024: Accelerating Digital Transformation for Sustainable Development*. Department of Economic and Social Affairs, New York.
+
+World Bank (2026). World Development Indicators. Accessed via the R package WDI, 11-12 October 2026.
